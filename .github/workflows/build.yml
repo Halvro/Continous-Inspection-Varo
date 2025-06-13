@@ -41,8 +41,8 @@ jobs:
 
       - name: Generate SonarQube Properties
         run: |
-          echo "sonar.projectKey=" > sonar-project.properties
-          echo "sonar.organization=" >> sonar-project.properties
+          echo "sonar.projectKey=halvro_continous-inspection" > sonar-project.properties
+          echo "sonar.organization=halvro" >> sonar-project.properties
           echo "sonar.host.url=https://sonarcloud.io" >> sonar-project.properties
           echo "sonar.sources=lib" >> sonar-project.properties
           echo "sonar.tests=test" >> sonar-project.properties
