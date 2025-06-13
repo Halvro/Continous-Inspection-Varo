@@ -1,5 +1,7 @@
-name: Build
+# Nama untuk keseluruhan alur kerja (pipeline)
+name: Flutter CI/CD Pipeline (Test, Inspect, Deploy)
 
+# Pemicu: Alur kerja akan berjalan saat ada push ke main atau saat ada pull request
 on:
   push:
     branches:
@@ -8,37 +10,42 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  sonarqube:
-    name: SonarQube
+  # JOB 1: CI CHECKS (TESTING & INSPECTION)
+  # Menggabungkan proses tes dan SonarQube sebagai gerbang kualitas (quality gate).
+  ci-checks:
+    name: Run CI Checks (Test & SonarQube)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Langkah 1: Mengunduh kode dari repository
+      # fetch-depth: 0 diperlukan untuk analisis SonarQube yang relevan
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      
+          fetch-depth: 0  
+
+      # Langkah 2: Menyiapkan lingkungan Java
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
+      # Langkah 3: Menyiapkan lingkungan Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.1'
+          flutter-version: '3.22.1' # Anda bisa ganti ke '3.29.1' jika diperlukan
 
+      # Langkah 4: Mengunduh semua package yang dibutuhkan
       - name: Install Dependencies
         run: flutter pub get
 
-      # - name: Run Tests and Generate Coverage Report
-      #   run: flutter test --coverage
+      # Langkah 5: DIAKTIFKAN - Menjalankan tes dan membuat laporan cakupan (coverage)
+      # Laporan ini PENTING untuk dianalisis oleh SonarQube.
+      - name: Run Tests and Generate Coverage Report
+        run: flutter test --coverage
 
-      # - name: Upload Coverage Report
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: coverage-report
-      #     path: coverage/lcov.info
-
+      # Langkah 6: Membuat file properti untuk SonarQube
       - name: Generate SonarQube Properties
         run: |
           echo "sonar.projectKey=halvro_continous-inspection" > sonar-project.properties
@@ -51,12 +58,47 @@ jobs:
           echo "sonar.flutter.reportPaths=coverage/lcov.info" >> sonar-project.properties
           echo "sonar.java.binaries=build" >> sonar-project.properties
 
+      # Langkah 7: Menjalankan pemindaian SonarQube
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          
+  # JOB 2: CONTINUOUS DEPLOYMENT (BUILD & RELEASE)
+  # Job ini hanya berjalan jika 'ci-checks' sukses dan ada push ke branch 'main'.
+  deploy-android:
+    name: Build and Release Android APK
+    needs: [ci-checks]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      # - name: Verify Quality Gate
-      #   uses: SonarSource/sonarqube-quality-gate-action@v1
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.1'
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Create GitHub Release and Upload APK
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
+          name: "Rilis Aplikasi v${{ github.run_number }}"
+          tag_name: "v1.0.${{ github.run_number }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
